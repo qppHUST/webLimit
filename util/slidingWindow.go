@@ -29,7 +29,7 @@ func NewSlideWindowLimitRate(rate int, windowDuration time.Duration, slotDuratio
 		slotList:       make([]*timeSlot, windowDuration/slotDuration),
 	}
 	now := time.Now()
-	delta := time.Second
+	delta := time.Second * 0
 	for i := range tool.slotList {
 		tool.slotList[i] = &timeSlot{
 			startTime: now.Add(delta),
@@ -43,11 +43,11 @@ func NewSlideWindowLimitRate(rate int, windowDuration time.Duration, slotDuratio
 func (r *SlideWindowLimitRate) Acquire() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
 	now := time.Now()
 	index := int(now.Sub(r.slotList[0].startTime).Seconds() / r.slotDuration.Seconds())
 	if index > len(r.slotList)-1 {
 		delta := index - len(r.slotList) + 1
+		fmt.Println("当前请求时间为 ", now, " 请求在window之外,且index为：", index, " delta为: ", delta)
 		for i := range r.slotList {
 			slot := r.slotList[i]
 			for i := 0; i < delta; i++ {
@@ -59,16 +59,24 @@ func (r *SlideWindowLimitRate) Acquire() bool {
 				slot.count = 0
 			}
 		}
+		r.slotList[len(r.slotList)-1].count = 1
+		for i := range r.slotList {
+			fmt.Println(r.slotList[i].count, " ", r.slotList[i].startTime)
+		}
 		return true
 	} else {
+		r.slotList[index].count++
+		for i := range r.slotList {
+			fmt.Println(r.slotList[i].count, " ", r.slotList[i].startTime)
+		}
 		count := 0
 		for i := range r.slotList {
 			count += r.slotList[i].count
 		}
+		fmt.Println("当前请求时间为", now, "请求在window之内,且index为: ", index, "count为: ", count)
 		if count > r.rate {
 			return false
 		}
-		r.slotList[index].count++
 		return true
 	}
 }
@@ -85,7 +93,7 @@ func GetSlidingWindowHandler() gin.HandlerFunc {
 			context.JSON(429, gin.H{
 				"message": "too many requests",
 			})
+			context.Abort()
 		}
-		context.Abort()
 	}
 }

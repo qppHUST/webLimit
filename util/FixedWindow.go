@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"sync"
 	"time"
@@ -9,44 +10,53 @@ import (
 type fixedWindow struct {
 	lock       sync.Mutex
 	lastTime   time.Time
-	count      int64
-	windowSize int64
-	delay      int64
+	count      int
+	windowSize int
+	delay      time.Duration
 }
 
-func (fixedWindow *fixedWindow) tryAcquire() bool {
+func (fixedWindow *fixedWindow) TryAcquire() bool {
+	fixedWindow.lock.Lock()
+	defer fixedWindow.lock.Unlock()
 	now := time.Now()
-	duration := now.Sub(fixedWindow.lastTime).Milliseconds()
+	fmt.Println("当前请求时间为： ", now)
+	duration := now.Sub(fixedWindow.lastTime)
 	if duration > fixedWindow.delay {
-		fixedWindow.count = 0
-		fixedWindow.lock.Lock()
+		fmt.Println("超过delay，请求成功")
+		fixedWindow.count = 1
 		fixedWindow.lastTime = now
-		fixedWindow.lock.Unlock()
 		return true
 	} else {
-		fixedWindow.lock.Lock()
 		if fixedWindow.count+1 > fixedWindow.windowSize {
-			fixedWindow.count = 0
-			fixedWindow.lastTime = now
-			fixedWindow.lock.Unlock()
+			fmt.Println("仍处于duration内部", "count为: ", fixedWindow.count+1)
+			fixedWindow.count = fixedWindow.count + 1
 			return false
 		} else {
-			fixedWindow.count++
-			fixedWindow.lock.Unlock()
+			fmt.Println("仍处于duration内部", "count为: ", fixedWindow.count+1)
+			fixedWindow.count = fixedWindow.count + 1
 			return true
 		}
 	}
 }
 
-func GetFixedWindow() gin.HandlerFunc {
+func NewFixedWindow(windowSize int, delay time.Duration) *fixedWindow {
+	return &fixedWindow{
+		lastTime:   time.Now(),
+		count:      0,
+		windowSize: windowSize,
+		delay:      delay,
+	}
+}
+
+func GetFixedWindowHandler() gin.HandlerFunc {
 	window := &fixedWindow{
 		lastTime:   time.Now(),
 		count:      0,
 		windowSize: 10,
-		delay:      1000,
+		delay:      time.Second * 3,
 	}
 	return func(context *gin.Context) {
-		if !window.tryAcquire() {
+		if !window.TryAcquire() {
 			context.JSON(429, gin.H{
 				"message": "too many requests",
 			})
